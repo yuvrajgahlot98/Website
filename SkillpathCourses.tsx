@@ -18,9 +18,28 @@ type CountryCode = "IN" | "US"
 
 type LoadState = "loading" | "error" | "ready"
 
+type SortBy = "default" | "low" | "high"
+
 type SkillpathCoursesProps = {
     heading: string
+    intro: string
     accentColor: string
+}
+
+// Each category gets its own hue so the grid reads as a colourful set rather
+// than one repeated card. Unknown categories fall back to the brand accent.
+const CATEGORY_HUES: Record<string, [string, string]> = {
+    "Content Creation": ["#F0407F", "#FF7A4D"],
+    "Social Media": ["#3B6BF5", "#26A5F5"],
+    Audio: ["#0FA3A3", "#39C98A"],
+    Business: ["#7A45F0", "#B34DF0"],
+    Productivity: ["#E0761A", "#F2B23C"],
+    Marketing: ["#D33A6A", "#F2646E"],
+    "Video Editing": ["#2C7CE8", "#5FD0E8"],
+}
+
+function huesFor(category: string): [string, string] {
+    return CATEGORY_HUES[category] ?? ["#5B3DF5", "#8B6BFF"]
 }
 
 function formatPrice(course: Course, country: CountryCode | null) {
@@ -29,6 +48,7 @@ function formatPrice(course: Course, country: CountryCode | null) {
         return new Intl.NumberFormat("en-IN", {
             style: "currency",
             currency: "INR",
+            maximumFractionDigits: 0,
         }).format(course.pricePaise / 100)
     }
 
@@ -37,6 +57,7 @@ function formatPrice(course: Course, country: CountryCode | null) {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
             currency: "USD",
+            maximumFractionDigits: 0,
         }).format(course.priceUsdCents / 100)
     }
 
@@ -45,6 +66,7 @@ function formatPrice(course: Course, country: CountryCode | null) {
 
 export default function SkillpathCourses({
     heading,
+    intro,
     accentColor,
 }: SkillpathCoursesProps) {
     const [courses, setCourses] = React.useState<Course[]>([])
@@ -52,9 +74,7 @@ export default function SkillpathCourses({
     const [state, setState] = React.useState<LoadState>("loading")
     const [countryError, setCountryError] = React.useState(false)
     const [query, setQuery] = React.useState("")
-    const [sortBy, setSortBy] = React.useState<"default" | "low" | "high">(
-        "default"
-    )
+    const [sortBy, setSortBy] = React.useState<SortBy>("default")
     const [reloadKey, setReloadKey] = React.useState(0)
 
     React.useEffect(() => {
@@ -118,6 +138,7 @@ export default function SkillpathCourses({
 
         if (sortBy === "default") return matching
 
+        // Sort by whichever currency is on screen so the order matches the prices shown.
         const priceKey = country === "IN" ? "pricePaise" : "priceUsdCents"
         return [...matching].sort((a, b) =>
             sortBy === "low" ? a[priceKey] - b[priceKey] : b[priceKey] - a[priceKey]
@@ -126,129 +147,658 @@ export default function SkillpathCourses({
 
     const retry = () => setReloadKey((value) => value + 1)
 
+    // A cheap credibility signal in the hero: the entry price across the catalogue.
+    const lowestPrice = React.useMemo(() => {
+        if (!courses.length || !country) return null
+        const key = country === "IN" ? "pricePaise" : "priceUsdCents"
+        const cheapest = courses.reduce((low, c) => (c[key] < low[key] ? c : low))
+        return formatPrice(cheapest, country)
+    }, [courses, country])
+
+    // Announced to screen readers so filtering has an audible result, not just a visual one.
+    const resultSummary =
+        state !== "ready"
+            ? ""
+            : `${visibleCourses.length} ${
+                  visibleCourses.length === 1 ? "course" : "courses"
+              }${query.trim() ? ` matching ${query.trim()}` : ""}`
+
     return (
-        <section style={styles.section} aria-label="Courses">
+        <section
+            className="skillpath"
+            style={{ "--skillpath-accent": accentColor } as React.CSSProperties}
+            aria-labelledby="skillpath-heading"
+        >
             <style>{css}</style>
-            <div style={styles.header}>
-                <div>
-                    <p style={{ ...styles.eyebrow, color: accentColor }}>Explore Skillpath</p>
-                    <h2 style={styles.heading}>{heading}</h2>
+
+            <div className="skillpath-hero">
+                <div className="skillpath-hero-glow" aria-hidden="true" />
+                <div className="skillpath-hero-grain" aria-hidden="true" />
+                <div className="skillpath-hero-inner">
+                    <p className="skillpath-eyebrow">
+                        <span className="skillpath-dot" aria-hidden="true" />
+                        Explore Skillpath
+                    </p>
+                    <h2 id="skillpath-heading">{heading}</h2>
+                    {intro && <p className="skillpath-intro">{intro}</p>}
+
+                    {state === "ready" && courses.length > 0 && (
+                        <div className="skillpath-stats">
+                            <span>
+                                <strong>{courses.length}</strong> courses
+                            </span>
+                            <i aria-hidden="true" />
+                            <span>
+                                {lowestPrice ? (
+                                    <>
+                                        from <strong>{lowestPrice}</strong>
+                                    </>
+                                ) : (
+                                    "All levels"
+                                )}
+                            </span>
+                            <i aria-hidden="true" />
+                            <span>Lifetime access</span>
+                        </div>
+                    )}
                 </div>
-                {state === "ready" && courses.length > 0 && (
-                    <div className="skillpath-controls">
+            </div>
+
+            {state === "ready" && courses.length > 0 && (
+                <div className="skillpath-toolbar">
+                    <p className="skillpath-toolbar-label">
+                        {visibleCourses.length}{" "}
+                        {visibleCourses.length === 1 ? "course" : "courses"}
+                        {query.trim() ? ` for “${query.trim()}”` : ""}
+                    </p>
+                    <div className="skillpath-toolbar-fields">
+                    <div className="skillpath-field">
+                        <svg
+                            className="skillpath-search-icon"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                        >
+                            <circle
+                                cx="9"
+                                cy="9"
+                                r="5.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                            />
+                            <path
+                                d="M13.2 13.2 17 17"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                            />
+                        </svg>
                         <input
+                            type="search"
                             aria-label="Search courses"
                             placeholder="Search courses"
                             value={query}
                             onChange={(event) => setQuery(event.target.value)}
                         />
+                    </div>
+                    <div className="skillpath-field skillpath-field-select">
                         <select
                             aria-label="Sort courses by price"
                             value={sortBy}
                             onChange={(event) =>
-                                setSortBy(event.target.value as "default" | "low" | "high")
+                                setSortBy(event.target.value as SortBy)
                             }
                         >
-                            <option value="default">Sort: Featured</option>
-                            <option value="low">Price: Low to high</option>
-                            <option value="high">Price: High to low</option>
+                            <option value="default">Featured</option>
+                            <option value="low">Price: low to high</option>
+                            <option value="high">Price: high to low</option>
                         </select>
+                        <svg
+                            className="skillpath-chevron"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="m6 8 4 4 4-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
                     </div>
-                )}
-            </div>
+                    </div>
+                </div>
+            )}
+
+            <p className="skillpath-sr-only" role="status" aria-live="polite">
+                {resultSummary}
+            </p>
 
             {countryError && (
                 <div className="skillpath-notice" role="status">
-                    Courses are available, but prices could not be loaded. Please try again.
-                    <button onClick={retry}>Retry</button>
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path
+                            d="M10 6.5v4.2M10 13.6v.2"
+                            stroke="currentColor"
+                            strokeWidth="1.9"
+                            strokeLinecap="round"
+                        />
+                        <circle
+                            cx="10"
+                            cy="10"
+                            r="7.4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                        />
+                    </svg>
+                    <span>
+                        Courses loaded, but pricing for your region is unavailable
+                        right now.
+                    </span>
+                    <button type="button" onClick={retry}>
+                        Retry
+                    </button>
                 </div>
             )}
 
             {state === "loading" && (
-                <div className="skillpath-grid" aria-label="Loading courses">
+                <div className="skillpath-grid">
                     {Array.from({ length: 6 }, (_, index) => (
-                        <div className="skillpath-card skillpath-skeleton" key={index}>
-                            <span />
-                            <strong />
-                            <i />
-                            <i />
-                            <b />
+                        <div
+                            className="skillpath-card skillpath-skeleton"
+                            key={index}
+                            aria-hidden="true"
+                        >
+                            <span className="sk-line sk-eyebrow" />
+                            <span className="sk-line sk-title" />
+                            <span className="sk-line sk-title sk-title-short" />
+                            <span className="sk-line sk-text" />
+                            <span className="sk-line sk-text sk-text-short" />
+                            <span className="sk-foot">
+                                <span className="sk-line sk-type" />
+                                <span className="sk-line sk-price" />
+                            </span>
                         </div>
                     ))}
+                    <p className="skillpath-sr-only">Loading courses</p>
                 </div>
             )}
 
             {state === "error" && (
                 <div className="skillpath-state">
-                    <h3>We couldn’t load the courses.</h3>
-                    <p>The course service is having a moment. Try again in a few seconds.</p>
-                    <button style={{ background: accentColor }} onClick={retry}>Retry courses</button>
+                    <div className="skillpath-state-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M12 8v5M12 16.2v.2"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                            />
+                            <circle
+                                cx="12"
+                                cy="12"
+                                r="9"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.7"
+                            />
+                        </svg>
+                    </div>
+                    <h3>We couldn&rsquo;t load the courses</h3>
+                    <p>
+                        The course service didn&rsquo;t respond. It&rsquo;s usually
+                        back within a few seconds.
+                    </p>
+                    <button
+                        type="button"
+                        className="skillpath-button"
+                        onClick={retry}
+                    >
+                        Try again
+                    </button>
                 </div>
             )}
 
             {state === "ready" && courses.length === 0 && (
                 <div className="skillpath-state">
-                    <h3>No courses are available right now.</h3>
-                    <p>Please check back shortly.</p>
-                    <button style={{ background: accentColor }} onClick={retry}>Refresh</button>
+                    <h3>No courses available yet</h3>
+                    <p>New courses are added regularly. Please check back soon.</p>
+                    <button
+                        type="button"
+                        className="skillpath-button"
+                        onClick={retry}
+                    >
+                        Refresh
+                    </button>
                 </div>
             )}
 
-            {state === "ready" && courses.length > 0 && visibleCourses.length === 0 && (
-                <div className="skillpath-state">
-                    <h3>No courses match “{query}”.</h3>
-                    <button style={{ background: accentColor }} onClick={() => setQuery("")}>Clear search</button>
-                </div>
-            )}
+            {state === "ready" &&
+                courses.length > 0 &&
+                visibleCourses.length === 0 && (
+                    <div className="skillpath-state">
+                        <h3>No courses match &ldquo;{query.trim()}&rdquo;</h3>
+                        <p>Try a different word, or browse everything on offer.</p>
+                        <button
+                            type="button"
+                            className="skillpath-button"
+                            onClick={() => setQuery("")}
+                        >
+                            Clear search
+                        </button>
+                    </div>
+                )}
 
             {state === "ready" && visibleCourses.length > 0 && (
-                <div className="skillpath-grid">
-                    {visibleCourses.map((course) => (
-                        <article className="skillpath-card" key={course.courseCode}>
+                <ul className="skillpath-grid">
+                    {visibleCourses.map((course) => {
+                        const [from, to] = huesFor(course.mainCategory)
+                        return (
+                        <li
+                            className="skillpath-card"
+                            key={course.courseCode}
+                            style={{ "--c-from": from, "--c-to": to } as React.CSSProperties}
+                        >
+                            <span className="skillpath-card-rail" aria-hidden="true" />
                             <div className="skillpath-card-top">
-                                <span className="skillpath-category" style={{ color: accentColor }}>
+                                <span className="skillpath-category">
                                     {course.mainCategory}
                                 </span>
-                                {course.refundable && <span className="skillpath-badge">Refundable</span>}
+                                {course.refundable && (
+                                    <span className="skillpath-badge">
+                                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                                            <path
+                                                d="m3.6 8.4 2.9 2.9 5.9-6"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        </svg>
+                                        Refundable
+                                    </span>
+                                )}
                             </div>
                             <h3>{course.courseName}</h3>
-                            <p className="skillpath-description">{course.description}</p>
+                            <p className="skillpath-description">
+                                {course.description}
+                            </p>
                             <div className="skillpath-card-footer">
-                                <span className="skillpath-type">{course.courseType}</span>
-                                <strong>{formatPrice(course, country)}</strong>
+                                <span className="skillpath-type">
+                                    {course.courseType}
+                                </span>
+                                <strong className="skillpath-price">
+                                    {formatPrice(course, country)}
+                                </strong>
                             </div>
-                        </article>
-                    ))}
-                </div>
+                        </li>
+                        )
+                    })}
+                </ul>
             )}
         </section>
     )
 }
 
 addPropertyControls(SkillpathCourses, {
-    heading: { type: ControlType.String, title: "Heading", defaultValue: "Find your next skill" },
-    accentColor: { type: ControlType.Color, title: "Accent", defaultValue: "#7C3AED" },
+    heading: {
+        type: ControlType.String,
+        title: "Heading",
+        defaultValue: "Find your next skill",
+    },
+    intro: {
+        type: ControlType.String,
+        title: "Intro",
+        defaultValue:
+            "Practical, expert-led courses built for the work you want to do next.",
+        displayTextArea: true,
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent",
+        defaultValue: "#5B3DF5",
+    },
 })
 
-const styles: Record<string, React.CSSProperties> = {
-    section: { fontFamily: "Inter, sans-serif", color: "#17151F", maxWidth: 1200, margin: "0 auto", padding: "80px 24px" },
-    header: { display: "flex", alignItems: "end", justifyContent: "space-between", gap: 24, marginBottom: 28 },
-    eyebrow: { fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 8px" },
-    heading: { fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.05, letterSpacing: "-0.05em", margin: 0 },
+const css = `
+.skillpath {
+    --sp-ink: #14121C;
+    --sp-body: #57536B;
+    --sp-muted: #7A7690;
+    --sp-line: #E7E4EE;
+    --sp-surface: #FFFFFF;
+    --sp-radius: 20px;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--sp-ink);
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(20px, 3vw, 36px);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
-const css = `
-    .skillpath-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
-    .skillpath-card { min-height:238px; padding:24px; border:1px solid #e7e4ed; border-radius:18px; background:#fff; box-sizing:border-box; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(32,22,56,.03); }
-    .skillpath-card-top,.skillpath-card-footer,.skillpath-controls { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .skillpath-category { font-size:13px; font-weight:700; }.skillpath-badge { font-size:12px; background:#ecfdf3; color:#167148; padding:5px 8px; border-radius:99px; font-weight:700; }
-    .skillpath-card h3 { font-size:21px; line-height:1.2; letter-spacing:-.03em; margin:22px 0 10px; }.skillpath-description { font-size:14px; color:#625e6d; line-height:1.55; margin:0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-    .skillpath-card-footer { margin-top:auto; padding-top:22px; }.skillpath-type { color:#625e6d; font-size:13px; }.skillpath-card-footer strong { font-size:20px; letter-spacing:-.02em; }
-    .skillpath-controls input,.skillpath-controls select { font:inherit; font-size:14px; padding:11px 12px; border:1px solid #d8d3e0; border-radius:10px; background:#fff; color:#282330; }.skillpath-controls input { width:150px; }
-    .skillpath-notice { margin:0 0 18px; padding:12px 14px; border-radius:10px; background:#fff8e8; color:#704e00; font-size:14px; }.skillpath-notice button { color:inherit; text-decoration:underline; padding:0; margin-left:8px; background:none; }
-    .skillpath-state { text-align:center; padding:64px 20px; border:1px dashed #d8d3e0; border-radius:18px; }.skillpath-state h3 { margin:0 0 8px; font-size:22px; }.skillpath-state p { color:#625e6d; margin:0 0 20px; }.skillpath-state button { color:#fff; border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:700; cursor:pointer; }
-    .skillpath-skeleton { gap:16px; }.skillpath-skeleton span,.skillpath-skeleton strong,.skillpath-skeleton i,.skillpath-skeleton b { display:block; border-radius:8px; background:linear-gradient(90deg,#f0edf4 25%,#faf9fb 45%,#f0edf4 65%); background-size:300% 100%; animation:skillpath-shimmer 1.3s infinite; }.skillpath-skeleton span { width:35%; height:14px; }.skillpath-skeleton strong { width:70%; height:28px; margin-top:12px; }.skillpath-skeleton i { height:12px; }.skillpath-skeleton b { width:40%; height:20px; margin-top:auto; }
-    @keyframes skillpath-shimmer { to { background-position:-300% 0; } }
-    @media (max-width: 900px) { .skillpath-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .skillpath-header { align-items:flex-start; } }
-    @media (max-width: 600px) { .skillpath-grid { grid-template-columns:1fr; } .skillpath-controls { width:100%; }.skillpath-controls input,.skillpath-controls select { flex:1; min-width:0; }.skillpath-card { min-height:220px; } }
+.skillpath *, .skillpath *::before, .skillpath *::after { box-sizing: border-box; }
+
+.skillpath-sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---------- hero ---------- */
+.skillpath-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 26px;
+    padding: clamp(34px, 4.4vw, 56px) clamp(26px, 4vw, 52px);
+    margin-bottom: clamp(20px, 3vw, 30px);
+    background:
+        radial-gradient(120% 150% at 8% 0%, #6E3DF6 0%, transparent 55%),
+        radial-gradient(110% 140% at 96% 8%, #C13BC6 0%, transparent 52%),
+        linear-gradient(126deg, #3A1E9E 0%, #24136B 46%, #150C40 100%);
+    color: #fff;
+    isolation: isolate;
+}
+.skillpath-hero-glow {
+    position: absolute; z-index: 0;
+    width: 480px; height: 480px; right: -130px; top: -230px;
+    background: radial-gradient(circle, rgba(255,138,205,.5), transparent 62%);
+    filter: blur(14px);
+    pointer-events: none;
+}
+/* Subtle texture stops the large gradient from banding on wide screens. */
+.skillpath-hero-grain {
+    position: absolute; inset: 0; z-index: 0; opacity: .3;
+    background-image: radial-gradient(rgba(255,255,255,.16) .6px, transparent .6px);
+    background-size: 4px 4px;
+    -webkit-mask-image: linear-gradient(160deg, #000, transparent 72%);
+    mask-image: linear-gradient(160deg, #000, transparent 72%);
+    pointer-events: none;
+}
+.skillpath-hero-inner { position: relative; z-index: 1; max-width: 40ch; }
+.skillpath-eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin: 0 0 18px; padding: 7px 14px 7px 11px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.13);
+    border: 1px solid rgba(255,255,255,.2);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    font-size: 11.5px; font-weight: 600;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: #F3EDFF;
+}
+.skillpath-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #6EF2C0;
+    box-shadow: 0 0 0 4px rgba(110,242,192,.22);
+}
+.skillpath h2 {
+    margin: 0;
+    font-size: clamp(38px, 5.6vw, 68px);
+    line-height: 1.02;
+    letter-spacing: -0.045em;
+    font-weight: 650;
+    text-wrap: balance;
+}
+.skillpath-intro {
+    margin: 18px 0 0;
+    font-size: clamp(15.5px, 1.35vw, 18px);
+    line-height: 1.58;
+    color: rgba(255,255,255,.78);
+    text-wrap: pretty;
+}
+.skillpath-stats {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    margin-top: 28px;
+    font-size: 14px; color: rgba(255,255,255,.72);
+}
+.skillpath-stats strong { color: #fff; font-weight: 650; }
+.skillpath-stats i {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: rgba(255,255,255,.32);
+}
+
+/* ---------- toolbar ---------- */
+.skillpath-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-bottom: 16px;
+}
+.skillpath-toolbar-label {
+    font-size: 14px; font-weight: 600; color: var(--sp-body);
+}
+.skillpath-toolbar-fields { display: flex; gap: 10px; }
+.skillpath-field { position: relative; display: flex; align-items: center; }
+.skillpath-field input, .skillpath-field select {
+    font: inherit; font-size: 14px;
+    color: var(--sp-ink);
+    background: var(--sp-surface);
+    border: 1px solid var(--sp-line);
+    border-radius: 12px;
+    padding: 11px 14px 11px 38px;
+    height: 46px;
+    outline: none;
+    box-shadow: 0 1px 2px rgba(20,18,28,.04);
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+.skillpath-field select {
+    padding: 11px 36px 11px 15px;
+    appearance: none; -webkit-appearance: none;
+    cursor: pointer; font-weight: 500;
+}
+.skillpath-field input { width: 210px; }
+.skillpath-field input::placeholder { color: var(--sp-muted); }
+.skillpath-field input:focus-visible, .skillpath-field select:focus-visible {
+    border-color: var(--skillpath-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--skillpath-accent) 18%, transparent);
+}
+.skillpath-field input:hover, .skillpath-field select:hover { border-color: #D3CDDF; }
+.skillpath-search-icon, .skillpath-chevron {
+    position: absolute; width: 17px; height: 17px;
+    color: var(--sp-muted); pointer-events: none;
+}
+.skillpath-search-icon { left: 13px; }
+.skillpath-chevron { right: 12px; }
+
+/* ---------- notice ---------- */
+.skillpath-notice {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 18px; padding: 14px 16px;
+    border: 1px solid #F3E1BC;
+    background: linear-gradient(180deg, #FFFCF4, #FEF7E9);
+    border-radius: 14px;
+    color: #7A5806;
+    font-size: 14.5px; line-height: 1.45;
+}
+.skillpath-notice svg { width: 18px; height: 18px; flex-shrink: 0; }
+.skillpath-notice span { flex: 1; }
+.skillpath-notice button {
+    font: inherit; font-weight: 600; font-size: 14px;
+    color: #7A5806; background: #fff;
+    border: 1px solid #E2CB98; border-radius: 9px;
+    padding: 7px 13px; cursor: pointer; flex-shrink: 0;
+    transition: background .16s ease;
+}
+.skillpath-notice button:hover { background: #FBF3E2; }
+.skillpath-notice button:focus-visible { outline: 2px solid #7A5806; outline-offset: 2px; }
+
+/* ---------- grid + cards ---------- */
+.skillpath-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(302px, 1fr));
+    gap: 16px;
+    list-style: none; margin: 0; padding: 0;
+}
+.skillpath-card {
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    min-height: 264px;
+    padding: 26px 24px 24px;
+    background: var(--sp-surface);
+    border: 1px solid var(--sp-line);
+    border-radius: var(--sp-radius);
+    box-shadow: 0 1px 2px rgba(20,18,28,.04);
+    transition: transform .24s cubic-bezier(.22,.7,.3,1),
+                box-shadow .24s ease, border-color .24s ease;
+}
+/* Colour rail keyed to the course category. */
+.skillpath-card-rail {
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, var(--c-from), var(--c-to));
+}
+/* A faint wash of the same hue so the whole card reads as coloured. */
+.skillpath-card::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(170deg,
+        color-mix(in srgb, var(--c-from) 9%, transparent), transparent 46%);
+}
+.skillpath-card > * { position: relative; z-index: 1; }
+.skillpath-card:hover {
+    transform: translateY(-5px);
+    border-color: color-mix(in srgb, var(--c-from) 34%, var(--sp-line));
+    box-shadow: 0 20px 40px -16px color-mix(in srgb, var(--c-from) 40%, transparent),
+                0 4px 10px -4px rgba(20,18,28,.08);
+}
+.skillpath-card-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 24px; /* keeps titles aligned whether or not a badge is present */
+}
+.skillpath-category {
+    font-size: 11.5px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: linear-gradient(96deg, var(--c-from), var(--c-to));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.skillpath-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11.5px; font-weight: 600;
+    color: #0F6145; background: #E9FAF2;
+    border: 1px solid #C3EBD9;
+    padding: 4px 9px 4px 7px; border-radius: 99px;
+    white-space: nowrap;
+}
+.skillpath-badge svg { width: 12px; height: 12px; }
+.skillpath-card h3 {
+    margin: 20px 0 10px;
+    font-size: 21px; font-weight: 600;
+    line-height: 1.2; letter-spacing: -0.025em;
+    text-wrap: balance;
+}
+.skillpath-description {
+    margin: 0;
+    font-size: 14.5px; line-height: 1.56;
+    color: var(--sp-body);
+    display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3; overflow: hidden;
+}
+.skillpath-card-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: auto; padding-top: 20px;
+    border-top: 1px solid #F0EDF4;
+}
+.skillpath-description + .skillpath-card-footer { margin-top: 22px; }
+.skillpath-type {
+    font-size: 12px; font-weight: 600; color: var(--sp-body);
+    background: #F5F3F9; border-radius: 7px; padding: 5px 10px;
+}
+.skillpath-price {
+    font-size: 22px; font-weight: 700; letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(96deg, var(--c-from), var(--c-to));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ---------- empty / error states ---------- */
+.skillpath-state {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+    padding: clamp(44px, 6vw, 60px) 24px;
+    border: 1px solid var(--sp-line);
+    border-radius: var(--sp-radius);
+    background: linear-gradient(180deg, #fff, #FAF9FC);
+}
+.skillpath-state-icon {
+    display: grid; place-items: center;
+    width: 48px; height: 48px; margin-bottom: 18px;
+    border-radius: 50%;
+    background: #FCEDEC; color: #B4443C;
+}
+.skillpath-state-icon svg { width: 24px; height: 24px; }
+.skillpath-state h3 {
+    margin: 0 0 8px;
+    font-size: 22px; font-weight: 600; letter-spacing: -0.022em;
+}
+.skillpath-state p {
+    margin: 0 0 22px; max-width: 42ch;
+    color: var(--sp-body); font-size: 15px; line-height: 1.55;
+}
+.skillpath-button {
+    font: inherit; font-size: 14.5px; font-weight: 600;
+    color: #fff;
+    background: linear-gradient(96deg, #6E3DF6, #A93BD8);
+    border: 0; border-radius: 11px;
+    padding: 13px 22px; cursor: pointer;
+    box-shadow: 0 8px 18px -8px rgba(110,61,246,.7);
+    transition: filter .16s ease, transform .16s ease;
+}
+.skillpath-button:hover { filter: brightness(1.08); }
+.skillpath-button:active { transform: translateY(1px); }
+.skillpath-button:focus-visible {
+    outline: 2px solid var(--skillpath-accent); outline-offset: 3px;
+}
+
+/* ---------- skeleton ---------- */
+.skillpath-skeleton { gap: 0; pointer-events: none; }
+.sk-line {
+    display: block; border-radius: 6px;
+    background: linear-gradient(90deg, #F1EFF5 25%, #F8F7FA 45%, #F1EFF5 65%);
+    background-size: 300% 100%;
+    animation: skillpath-shimmer 1.4s ease-in-out infinite;
+}
+.sk-eyebrow { width: 38%; height: 11px; }
+.sk-title { height: 17px; margin-top: 22px; }
+.sk-title-short { width: 55%; margin-top: 9px; }
+.sk-text { height: 11px; margin-top: 16px; }
+.sk-text-short { width: 72%; margin-top: 8px; }
+.sk-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: auto; padding-top: 20px; border-top: 1px solid #F4F2F7;
+}
+.sk-type { width: 68px; height: 12px; }
+.sk-price { width: 58px; height: 17px; }
+@keyframes skillpath-shimmer { to { background-position: -300% 0; } }
+
+/* ---------- responsive ---------- */
+@media (max-width: 940px) {
+    .skillpath-toolbar-fields { flex: 1; justify-content: flex-end; }
+    .skillpath-toolbar-fields .skillpath-field:first-child { flex: 1; max-width: 320px; }
+    .skillpath-field input { width: 100%; }
+}
+@media (max-width: 620px) {
+    .skillpath-hero { border-radius: 22px; }
+    .skillpath-grid { grid-template-columns: 1fr; }
+    .skillpath-card { min-height: 0; }
+    .skillpath-toolbar { flex-direction: column; align-items: stretch; }
+    .skillpath-toolbar-fields { flex-direction: column; }
+    .skillpath-field select { width: 100%; }
+    .skillpath-notice { flex-wrap: wrap; }
+}
+
+/* ---------- motion / contrast preferences ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .skillpath *, .skillpath *::before, .skillpath *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+    }
+    .skillpath-card:hover { transform: none; }
+}
+@media (prefers-contrast: more) {
+    .skillpath { --sp-body: #38344A; --sp-muted: #47435A; --sp-line: #B9B4C6; }
+}
 `
