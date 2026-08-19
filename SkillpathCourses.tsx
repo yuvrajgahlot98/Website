@@ -22,9 +22,11 @@ type SortBy = "default" | "low" | "high"
 
 type SkillpathCoursesProps = {
     heading: string
-    intro: string
     accentColor: string
 }
+
+const DEFAULT_INTRO =
+    "Practical, expert-led courses built for the work you want to do next."
 
 // Each category gets its own hue so the grid reads as a colourful set rather
 // than one repeated card. Unknown categories fall back to the brand accent.
@@ -57,7 +59,6 @@ function formatPrice(course: Course, country: CountryCode | null) {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
             currency: "USD",
-            maximumFractionDigits: 0,
         }).format(course.priceUsdCents / 100)
     }
 
@@ -66,7 +67,6 @@ function formatPrice(course: Course, country: CountryCode | null) {
 
 export default function SkillpathCourses({
     heading,
-    intro,
     accentColor,
 }: SkillpathCoursesProps) {
     const [courses, setCourses] = React.useState<Course[]>([])
@@ -147,6 +147,12 @@ export default function SkillpathCourses({
 
     const retry = () => setReloadKey((value) => value + 1)
 
+    const scrollToCourses = () => {
+        document
+            .getElementById("skillpath-courses-grid")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+
     // A cheap credibility signal in the hero: the entry price across the catalogue.
     const lowestPrice = React.useMemo(() => {
         if (!courses.length || !country) return null
@@ -180,7 +186,15 @@ export default function SkillpathCourses({
                         Explore Skillpath
                     </p>
                     <h2 id="skillpath-heading">{heading}</h2>
-                    {intro && <p className="skillpath-intro">{intro}</p>}
+                    <p className="skillpath-intro">{DEFAULT_INTRO}</p>
+                    <button
+                        type="button"
+                        className="skillpath-hero-button"
+                        onClick={scrollToCourses}
+                    >
+                        Browse courses
+                        <span aria-hidden="true">→</span>
+                    </button>
 
                     {state === "ready" && courses.length > 0 && (
                         <div className="skillpath-stats">
@@ -305,7 +319,7 @@ export default function SkillpathCourses({
             )}
 
             {state === "loading" && (
-                <div className="skillpath-grid">
+                <div className="skillpath-grid" id="skillpath-courses-grid">
                     {Array.from({ length: 6 }, (_, index) => (
                         <div
                             className="skillpath-card skillpath-skeleton"
@@ -393,7 +407,7 @@ export default function SkillpathCourses({
                 )}
 
             {state === "ready" && visibleCourses.length > 0 && (
-                <ul className="skillpath-grid">
+                <ul className="skillpath-grid" id="skillpath-courses-grid">
                     {visibleCourses.map((course) => {
                         const [from, to] = huesFor(course.mainCategory)
                         return (
@@ -440,6 +454,14 @@ export default function SkillpathCourses({
                     })}
                 </ul>
             )}
+            <footer className="skillpath-footer">
+                <nav aria-label="Skillpath footer">
+                    <a href="#skillpath-courses-grid">Courses</a>
+                    <a href="#skillpath-support">Support</a>
+                    <a href="#skillpath-privacy">Privacy</a>
+                </nav>
+                <span>© {new Date().getFullYear()} Skillpath. All rights reserved.</span>
+            </footer>
         </section>
     )
 }
@@ -449,13 +471,6 @@ addPropertyControls(SkillpathCourses, {
         type: ControlType.String,
         title: "Heading",
         defaultValue: "Find your next skill",
-    },
-    intro: {
-        type: ControlType.String,
-        title: "Intro",
-        defaultValue:
-            "Practical, expert-led courses built for the work you want to do next.",
-        displayTextArea: true,
     },
     accentColor: {
         type: ControlType.Color,
@@ -561,6 +576,19 @@ const css = `
     width: 4px; height: 4px; border-radius: 50%;
     background: rgba(255,255,255,.32);
 }
+.skillpath-hero-button {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 26px; padding: 13px 18px;
+    border: 1px solid rgba(255,255,255,.32); border-radius: 11px;
+    color: #29146F; background: #fff; cursor: pointer;
+    font: inherit; font-size: 14.5px; font-weight: 700;
+    transition: transform .16s ease, background .16s ease;
+}
+.skillpath-hero-button:hover { transform: translateY(-1px); background: #F5F0FF; }
+.skillpath-hero-button:focus-visible {
+    outline: 2px solid #fff; outline-offset: 3px;
+}
+.skillpath-hero-button span { font-size: 18px; line-height: .8; }
 
 /* ---------- toolbar ---------- */
 .skillpath-toolbar {
@@ -628,7 +656,7 @@ const css = `
 /* ---------- grid + cards ---------- */
 .skillpath-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(302px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
     list-style: none; margin: 0; padding: 0;
 }
@@ -693,7 +721,7 @@ const css = `
     font-size: 14.5px; line-height: 1.56;
     color: var(--sp-body);
     display: -webkit-box; -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3; overflow: hidden;
+    -webkit-line-clamp: 2; overflow: hidden;
 }
 .skillpath-card-footer {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -711,6 +739,22 @@ const css = `
     background: linear-gradient(96deg, var(--c-from), var(--c-to));
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
+}
+
+/* ---------- footer ---------- */
+.skillpath-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-top: clamp(36px, 5vw, 58px); padding-top: 20px;
+    border-top: 1px solid var(--sp-line); color: var(--sp-muted);
+    font-size: 13px;
+}
+.skillpath-footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
+.skillpath-footer a {
+    color: inherit; text-decoration: none; font-weight: 600;
+}
+.skillpath-footer a:hover { color: var(--skillpath-accent); }
+.skillpath-footer a:focus-visible {
+    outline: 2px solid var(--skillpath-accent); outline-offset: 3px; border-radius: 2px;
 }
 
 /* ---------- empty / error states ---------- */
@@ -775,6 +819,7 @@ const css = `
 
 /* ---------- responsive ---------- */
 @media (max-width: 940px) {
+    .skillpath-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .skillpath-toolbar-fields { flex: 1; justify-content: flex-end; }
     .skillpath-toolbar-fields .skillpath-field:first-child { flex: 1; max-width: 320px; }
     .skillpath-field input { width: 100%; }
@@ -783,6 +828,7 @@ const css = `
     .skillpath-hero { border-radius: 22px; }
     .skillpath-grid { grid-template-columns: 1fr; }
     .skillpath-card { min-height: 0; }
+    .skillpath-footer { flex-direction: column; align-items: flex-start; }
     .skillpath-toolbar { flex-direction: column; align-items: stretch; }
     .skillpath-toolbar-fields { flex-direction: column; }
     .skillpath-field select { width: 100%; }
